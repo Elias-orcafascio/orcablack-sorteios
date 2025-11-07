@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Sorteios OrçaBlack</title>
+<!-- SheetJS (leitura/escrita Excel) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  body{font-family:system-ui,Segoe UI,Arial,sans-serif;background:#0a0f2b;color:#eef2ff;margin:0;padding:0}
+  .wrap{max-width:980px;margin:24px auto;padding:0 16px}
+  .card{background:#0f153a;border:1px solid #ffffff18;border-radius:14px;padding:16px;margin-bottom:16px}
+  h1{font-size:22px;margin:0 0 10px}
+  label{display:block;font-size:14px;margin:10px 0 6px;opacity:.9}
+  input[type="number"],input[type="file"]{width:100%;padding:8px;border-radius:10px;border:1px solid #ffffff24;background:#0b1131;color:#eef2ff}
+  button{padding:10px 14px;border-radius:10px;border:0;background:#2563eb;color:#fff;font-weight:600;cursor:pointer}
+  button.secondary{background:#12183e;border:1px solid #ffffff24}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .col{flex:1 1 240px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{border-bottom:1px solid #ffffff14;padding:8px;text-align:left}
+  .status{font-size:15px}
+  .ok{color:#86efac} .warn{color:#fde68a} .err{color:#fca5a5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Sorteios OrçaBlack</h1>
+    <div class="row">
+      <div class="col">
+        <label>Carregar Excel (.xlsx) com abas “Geral” e “Ganhadores”</label>
+        <input id="fileInput" type="file" accept=".xlsx"/>
+        <div style="font-size:12px;opacity:.7;margin-top:6px">Tudo roda no navegador. Precisa de internet para a biblioteca do Excel (CDN).</div>
+      </div>
+      <div class="col">
+        <label>Mínimo</label>
+        <input id="minNum" type="number" placeholder="1"/>
+      </div>
+      <div class="col">
+        <label>Máximo</label>
+        <input id="maxNum" type="number" placeholder="100"/>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="btnSortear">Sortear</button>
+      <button id="btnBaixar" class="secondary">Baixar Excel atualizado</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 12px;font-size:18px">Status</h2>
+    <div class="row">
+      <div class="col"><b>Total na Geral:</b> <span id="statGeral">—</span></div>
+      <div class="col"><b>Já ganhadores:</b> <span id="statGanhadores">—</span></div>
+      <div class="col"><b>Elegíveis agora:</b> <span id="statElegiveis">—</span></div>
+    </div>
+    <div class="status" id="resultMsg" style="margin-top:10px">Carregue o arquivo e clique em Sortear.</div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 12px;font-size:18px">Histórico recente (Ganhadores)</h2>
+    <div style="max-height:340px;overflow:auto;border:1px solid #ffffff14;border-radius:10px">
+      <table>
+        <thead><tr><th>Data/Hora</th><th>Número</th><th>Empresa</th><th>E-mail</th></tr></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const toKey = v => (v??"").toString().trim().toLowerCase();
+const onlyInt = v => Number.isFinite(v)?Math.trunc(v):parseInt(v,10);
+
+let wbRaw=null, geral=[], ganhadores=[], headersGeral=[], headersGanh=[];
+const REQ={numero:"Numero", email:"Email", empresa:"Empresa"};
+
+const elFile = document.getElementById('fileInput');
+const elMin = document.getElementById('minNum');
+const elMax = document.getElementById('maxNum');
+const elBtnSortear = document.getElementById('btnSortear');
+const elBtnBaixar = document.getElementById('btnBaixar');
+const statGeral = document.getElementById('statGeral');
+const statGanh = document.getElementById('statGanhadores');
+const statEleg = document.getElementById('statElegiveis');
+const resultMsg = document.getElementById('resultMsg');
+const tableBody = document.getElementById('tableBody');
+
+elFile.addEventListener('change', async e=>{
+  const f=e.target.files?.[0]; if(!f) return;
+  wbRaw=await f.arrayBuffer();
+  const wb = XLSX.read(wbRaw,{type:'array'});
+  const wsGeral = wb.Sheets['Geral'];
+  const wsGanh = wb.Sheets['Ganhadores'];
+
+  geral = wsGeral? XLSX.utils.sheet_to_json(wsGeral,{defval:""}):[];
+  ganhadores = wsGanh? XLSX.utils.sheet_to_json(wsGanh,{defval:""}):[];
+  headersGeral = wsGeral? getHeaders(wsGeral):[];
+  headersGanh = wsGanh? getHeaders(wsGanh):["DataSorteio","Numero","Empresa","Email"];
+
+  const missing=[REQ.numero,REQ.email,REQ.empresa].filter(h=>!headersGeral.map(toKey).includes(toKey(h)));
+  resultMsg.innerHTML = missing.length
+    ? `<span class="err">Aba "Geral" precisa: ${missing.join(', ')}.</span>`
+    : 'Arquivo carregado. Pronto para sortear.';
+
+  // auto min/max pelo conteúdo
+  const nums=geral.map(r=>onlyInt(r[REQ.numero])).filter(n=>Number.isFinite(n));
+  if(nums.length){ if(!elMin.value) elMin.value=Math.min(...nums); if(!elMax.value) elMax.value=Math.max(...nums); }
+
+  refreshUI(); renderHistory();
+});
+
+function getHeaders(ws){
+  const ref=ws['!ref']; if(!ref) return [];
+  const rg=XLSX.utils.decode_range(ref), r=rg.s.r; const out=[];
+  for(let c=rg.s.c;c<=rg.e.c;c++){ const cell=ws[XLSX.utils.encode_cell({r, c})]; out.push(cell?String(cell.v):""); }
+  return out;
+}
+function refreshUI(){ statGeral.textContent=geral.length; statGanh.textContent=ganhadores.length; statEleg.textContent=elegiveis().length; }
+function renderHistory(){
+  tableBody.innerHTML="";
+  [...ganhadores].reverse().slice(0,50).forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${r["DataSorteio"]??""}</td><td>${r["Numero"]??""}</td><td>${r["Empresa"]??""}</td><td>${r["Email"]??""}</td>`;
+    tableBody.appendChild(tr);
+  });
+}
+function setsFromGanhadores(){
+  const emails=new Set(ganhadores.map(r=>toKey(r["Email"])));
+  const nums=new Set(ganhadores.map(r=>onlyInt(r["Numero"])).filter(Number.isFinite));
+  return {emails, nums};
+}
+function elegiveis(){
+  const {emails, nums}=setsFromGanhadores();
+  const min=onlyInt(elMin.value), max=onlyInt(elMax.value);
+  const rangeOK=Number.isFinite(min)&&Number.isFinite(max);
+  return geral.filter(r=>{
+    const num=onlyInt(r[REQ.numero]), mail=toKey(r[REQ.email]);
+    if(!Number.isFinite(num)||!mail) return false;
+    if(rangeOK&&(num<min||num>max)) return false;
+    if(emails.has(mail)) return false;
+    if(nums.has(num)) return false;
+    return true;
+  });
+}
+
+elBtnSortear.addEventListener('click', ()=>{
+  if(!geral.length){ resultMsg.innerHTML=`<span class="warn">Carregue um arquivo primeiro.</span>`; return; }
+  const pool=elegiveis();
+  if(!pool.length){ resultMsg.innerHTML=`<span class="warn">Sem elegíveis no intervalo (ou todos já ganharam).</span>`; return; }
+
+  const pick = pool[Math.floor(Math.random()*pool.length)];
+  const now=new Date(), pad=n=>String(n).padStart(2,'0');
+  const stamp=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const novo={"DataSorteio":stamp,"Numero":pick[REQ.numero],"Empresa":pick[REQ.empresa],"Email":pick[REQ.email]};
+  headersGeral.forEach(h=>{ if(h && novo[h]===undefined) novo[h]=pick[h]; });
+  Object.keys(novo).forEach(k=>{ if(!headersGanh.map(toKey).includes(toKey(k))) headersGanh.push(k); });
+  ganhadores.push(novo);
+
+  renderHistory(); refreshUI();
+  resultMsg.innerHTML = `✅ <span class="ok">Ganhador!</span> Número <b>${novo.Numero}</b> — <b>${novo.Empresa||"-"}</b> (${novo.Email||"-"})`;
+});
+
+elBtnBaixar.addEventListener('click', ()=>{
+  if(!wbRaw){ resultMsg.innerHTML=`<span class="warn">Carregue um arquivo primeiro.</span>`; return; }
+  const wbNew=XLSX.utils.book_new();
+  const wsGeral=XLSX.utils.json_to_sheet(geral,{header:headersGeral,skipHeader:false});
+  const wsGanh=XLSX.utils.json_to_sheet(ganhadores,{header:headersGanh,skipHeader:false});
+  XLSX.utils.book_append_sheet(wbNew,wsGeral,'Geral');
+  XLSX.utils.book_append_sheet(wbNew,wsGanh,'Ganhadores');
+  const name=`Sorteios_OrcaBlack_${new Date().toISOString().replace(/[:T]/g,'-').split('.')[0]}.xlsx`;
+  XLSX.wri
