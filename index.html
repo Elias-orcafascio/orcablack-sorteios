@@ -6,70 +6,147 @@
 <title>Sorteios OrçaBlack</title>
 <!-- SheetJS (leitura/escrita Excel) -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
 <style>
-  body{font-family:system-ui,Segoe UI,Arial,sans-serif;background:#0a0f2b;color:#eef2ff;margin:0;padding:0}
-  .wrap{max-width:980px;margin:24px auto;padding:0 16px}
-  .card{background:#0f153a;border:1px solid #ffffff18;border-radius:14px;padding:16px;margin-bottom:16px}
-  h1{font-size:22px;margin:0 0 10px}
+  :root{
+    --azul-escuro:#070b2a;
+    --azul:#0a54ff;
+    --texto:#eef2ff;
+  }
+
+  /* ====== BASE ====== */
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; color:var(--texto); font-family:system-ui,Segoe UI,Arial,sans-serif;
+    /* camada 1: gradiente “noite” */
+    background:
+      radial-gradient(60% 60% at 50% 35%, #0e1440 0%, #081033 55%, #050a26 85%, #03061a 100%);
+    position:relative; overflow-x:hidden;
+  }
+  /* camada 2: “flare” com a imagem OrçaBlack (suave e grande) */
+  body::before{
+    content:""; position:fixed; inset:-10% -10% -10% -10%; z-index:-2; pointer-events:none;
+    background:
+      radial-gradient(40% 40% at 75% 20%, rgba(10,84,255,.18) 0%, rgba(10,84,255,0) 60%) ,
+      url('bg-orcablack.jpg') center 20% / 520px 520px no-repeat;
+    opacity:.35; filter:saturate(120%) blur(0.2px);
+  }
+  /* camada 3: marca d’água do OrçaFascio gigante e discreta */
+  body::after{
+    content:""; position:fixed; inset:0; z-index:-3; pointer-events:none;
+    background: url('watermark-orcafascio.png') center / min(1200px,85vw) no-repeat;
+    opacity:.08; filter:contrast(110%) saturate(110%);
+  }
+
+  .wrap{max-width:1080px;margin:24px auto 56px; padding:0 18px}
+  .card{
+    background:rgba(13,18,55,.55);
+    border:1px solid rgba(255,255,255,.10);
+    border-radius:16px; padding:16px; margin-bottom:16px;
+    box-shadow:0 16px 48px rgba(0,0,0,.35);
+    backdrop-filter: blur(8px);
+  }
+  h1{font-size:24px;margin:0 0 10px}
+  h2{font-size:18px;margin:0 0 12px}
+
   label{display:block;font-size:14px;margin:10px 0 6px;opacity:.9}
-  input[type="number"],input[type="file"]{width:100%;padding:8px;border-radius:10px;border:1px solid #ffffff24;background:#0b1131;color:#eef2ff}
-  button{padding:10px 14px;border-radius:10px;border:0;background:#2563eb;color:#fff;font-weight:600;cursor:pointer}
-  button.secondary{background:#12183e;border:1px solid #ffffff24}
+  input[type="number"],input[type="file"]{
+    width:100%;padding:10px;border-radius:12px;
+    border:1px solid #ffffff24;background:#0b1131;color:var(--texto)
+  }
+  button{
+    padding:10px 14px;border-radius:12px;border:0;cursor:pointer;font-weight:700;
+    background:var(--azul); color:#fff; transition:filter .15s ease;
+  }
+  button:hover{ filter:brightness(1.08) }
+  button.secondary{ background:#12183e;border:1px solid rgba(255,255,255,.18) }
+
   .row{display:flex;gap:12px;flex-wrap:wrap}
-  .col{flex:1 1 240px}
+  .col{flex:1 1 260px}
+
   table{width:100%;border-collapse:collapse;font-size:14px}
   th,td{border-bottom:1px solid #ffffff14;padding:8px;text-align:left}
   .status{font-size:15px}
   .ok{color:#86efac} .warn{color:#fde68a} .err{color:#fca5a5}
+
+  /* ====== TOPO COM MARCA ====== */
+  .topbar{
+    display:flex; align-items:center; justify-content:center;
+    padding:26px 18px 12px;
+  }
+  .marca{
+    height:64px; width:auto; display:block;
+    filter: drop-shadow(0 8px 28px rgba(0,0,0,.45));
+    image-rendering:auto;
+  }
+  .subtit{
+    text-align:center; margin-top:8px; letter-spacing:.12em; opacity:.85; font-weight:600; font-size:12px;
+  }
+
+  /* bordas e brilho leve nos cards de status */
+  .chip{
+    background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.10);
+    border-radius:14px; padding:12px 14px;
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="card">
-    <h1>Sorteios OrçaBlack</h1>
-    <div class="row">
-      <div class="col">
-        <label>Carregar Excel (.xlsx) com abas “Geral” e “Ganhadores”</label>
-        <input id="fileInput" type="file" accept=".xlsx"/>
-        <div style="font-size:12px;opacity:.7;margin-top:6px">Tudo roda no navegador. Precisa de internet para a biblioteca do Excel (CDN).</div>
-      </div>
-      <div class="col">
-        <label>Mínimo</label>
-        <input id="minNum" type="number" placeholder="1"/>
-      </div>
-      <div class="col">
-        <label>Máximo</label>
-        <input id="maxNum" type="number" placeholder="100"/>
-      </div>
-    </div>
-    <div class="row" style="margin-top:12px">
-      <button id="btnSortear">Sortear</button>
-      <button id="btnBaixar" class="secondary">Baixar Excel atualizado</button>
-    </div>
-  </div>
 
-  <div class="card">
-    <h2 style="margin:0 0 12px;font-size:18px">Status</h2>
-    <div class="row">
-      <div class="col"><b>Total na Geral:</b> <span id="statGeral">—</span></div>
-      <div class="col"><b>Já ganhadores:</b> <span id="statGanhadores">—</span></div>
-      <div class="col"><b>Elegíveis agora:</b> <span id="statElegiveis">—</span></div>
-    </div>
-    <div class="status" id="resultMsg" style="margin-top:10px">Carregue o arquivo e clique em Sortear.</div>
+  <!-- Cabeçalho com logo OrçaBlack -->
+  <div class="topbar">
+    <img src="marca-orcablack.png" alt="OrçaBlack Sorteios" class="marca" />
   </div>
+  <div class="subtit">S O R T E I O S &nbsp;•&nbsp; O R Ç A F A S C I O</div>
 
-  <div class="card">
-    <h2 style="margin:0 0 12px;font-size:18px">Histórico recente (Ganhadores)</h2>
-    <div style="max-height:340px;overflow:auto;border:1px solid #ffffff14;border-radius:10px">
-      <table>
-        <thead><tr><th>Data/Hora</th><th>Número</th><th>Empresa</th><th>E-mail</th></tr></thead>
-        <tbody id="tableBody"></tbody>
-      </table>
+  <div class="wrap">
+    <div class="card">
+      <h1>Configurar & Carregar</h1>
+      <div class="row">
+        <div class="col">
+          <label>Carregar Excel (.xlsx) com abas “Geral” e “Ganhadores”</label>
+          <input id="fileInput" type="file" accept=".xlsx"/>
+          <div style="font-size:12px;opacity:.72;margin-top:6px">Tudo roda no navegador. Precisa de internet para a biblioteca do Excel (CDN).</div>
+        </div>
+        <div class="col">
+          <label>Mínimo</label>
+          <input id="minNum" type="number" placeholder="1"/>
+        </div>
+        <div class="col">
+          <label>Máximo</label>
+          <input id="maxNum" type="number" placeholder="100"/>
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button id="btnSortear">Sortear</button>
+        <button id="btnBaixar" class="secondary">Baixar Excel atualizado</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Status</h2>
+      <div class="row" style="gap:16px">
+        <div class="col chip"><b>Total na Geral:</b> <span id="statGeral">—</span></div>
+        <div class="col chip"><b>Já ganhadores:</b> <span id="statGanhadores">—</span></div>
+        <div class="col chip"><b>Elegíveis agora:</b> <span id="statElegiveis">—</span></div>
+      </div>
+      <div class="status" id="resultMsg" style="margin-top:14px">Carregue o arquivo e clique em Sortear.</div>
+    </div>
+
+    <div class="card">
+      <h2>Histórico recente (Ganhadores)</h2>
+      <div style="max-height:360px;overflow:auto;border:1px solid #ffffff14;border-radius:12px">
+        <table>
+          <thead><tr><th>Data/Hora</th><th>Número</th><th>Empresa</th><th>E-mail</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
-</div>
 
 <script>
+/* ====== JS do sorteio (mesmo comportamento anterior) ====== */
 const toKey = v => (v??"").toString().trim().toLowerCase();
 const onlyInt = v => Number.isFinite(v)?Math.trunc(v):parseInt(v,10);
 
@@ -104,7 +181,6 @@ elFile.addEventListener('change', async e=>{
     ? `<span class="err">Aba "Geral" precisa: ${missing.join(', ')}.</span>`
     : 'Arquivo carregado. Pronto para sortear.';
 
-  // auto min/max pelo conteúdo
   const nums=geral.map(r=>onlyInt(r[REQ.numero])).filter(n=>Number.isFinite(n));
   if(nums.length){ if(!elMin.value) elMin.value=Math.min(...nums); if(!elMax.value) elMax.value=Math.max(...nums); }
 
@@ -170,4 +246,8 @@ elBtnBaixar.addEventListener('click', ()=>{
   XLSX.utils.book_append_sheet(wbNew,wsGeral,'Geral');
   XLSX.utils.book_append_sheet(wbNew,wsGanh,'Ganhadores');
   const name=`Sorteios_OrcaBlack_${new Date().toISOString().replace(/[:T]/g,'-').split('.')[0]}.xlsx`;
-  XLSX.wri
+  XLSX.writeFile(wbNew,name);
+});
+</script>
+</body>
+</html>
